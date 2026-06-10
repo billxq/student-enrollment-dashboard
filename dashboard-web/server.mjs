@@ -1,6 +1,7 @@
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
@@ -10,8 +11,32 @@ const PUBLIC_DIR = path.join(SERVER_DIR, "public");
 const AUTH_FILE = path.join(SERVER_DIR, "auth.json");
 const DATA_SEALED_FILE = path.join(SERVER_DIR, "data.sealed.json");
 const DATA_PLAINTEXT_FILE = path.join(SERVER_DIR, "data.json");
-const PORT = Number(process.env.PORT || 4173);
-const DATA_PASSPHRASE = process.env.DATA_PASSPHRASE || process.env.DATA_KEY || "";
+
+function loadDotEnvFile(filePath, target = {}) {
+  if (!fsSync.existsSync(filePath)) return target;
+  const content = fsSync.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex <= 0) continue;
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    if (!key) continue;
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in target)) target[key] = value;
+  }
+  return target;
+}
+
+const loadedEnv = loadDotEnvFile(path.join(ROOT, ".env"), loadDotEnvFile(path.join(SERVER_DIR, ".env"), { ...process.env }));
+const PORT = Number(loadedEnv.PORT || 4173);
+const DATA_PASSPHRASE = loadedEnv.DATA_PASSPHRASE || loadedEnv.DATA_KEY || "";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",

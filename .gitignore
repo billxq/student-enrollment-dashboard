@@ -3,6 +3,7 @@ node_modules/
 outputs/
 *.xlsx
 *.xls
+archive/**/*.xlsx
 dashboard-web/auth.json
 dashboard-web/data.json
 dashboard-web/*.log

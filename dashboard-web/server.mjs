@@ -3,6 +3,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import crypto from "node:crypto";
+import os from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -43,9 +46,13 @@ const MIME = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".png": "image/png",
   ".svg": "image/svg+xml; charset=utf-8",
 };
+
+const execFileAsync = promisify(execFile);
+const IMPORT_SCRIPT = path.join(ROOT, "scripts", "import_roster.py");
 
 const sessions = new Map();
 const dataCache = {
@@ -239,6 +246,51 @@ async function changePassword(username, currentPassword, newPassword) {
   return { ok: true };
 }
 
+function parseAcademicTerm(termInput) {
+  const text = String(termInput || "").trim();
+  const match = text.match(/^(\d{4})\s*学年度\s*(第一|第二|1|2)\s*学期$/);
+  if (!match) {
+    throw new Error("请输入正确格式，例如：2025学年度第一学期");
+  }
+  const yearLabel = `${match[1]}学年度`;
+  const semesterLabel = `${match[1]}学年度${match[2] === "第一" || match[2] === "1" ? "第一学期" : "第二学期"}`;
+  return { yearLabel, semesterLabel };
+}
+
+async function importRosterWorkbook({ fileName, fileBase64, termInput }) {
+  if (!fileName || !fileBase64 || !termInput) {
+    throw new Error("请先选择 Excel 文件并填写学年度学期");
+  }
+
+  const { yearLabel, semesterLabel } = parseAcademicTerm(termInput);
+  const safeName = path.basename(String(fileName)).replace(/[\\/:*?"<>|]/g, "_");
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "student-import-"));
+  const tempPath = path.join(tempDir, safeName);
+
+  try {
+    await fs.writeFile(tempPath, Buffer.from(fileBase64, "base64"));
+    const { stdout } = await execFileAsync(
+      process.env.PYTHON || "python",
+      [IMPORT_SCRIPT, tempPath, yearLabel, semesterLabel],
+      {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          DATA_PASSPHRASE,
+        },
+        maxBuffer: 20 * 1024 * 1024,
+      },
+    );
+    const result = JSON.parse(stdout.trim() || "{}");
+    if (!result.ok) throw new Error("导入失败");
+    dataCache.value = null;
+    dataCache.promise = null;
+    return result;
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function serveStatic(req, res, pathname) {
   const safePath = pathname === "/" ? "/index.html" : pathname;
   const assetRoot = safePath.startsWith("/assets/") ? path.join(ROOT, "assets") : PUBLIC_DIR;
@@ -321,6 +373,23 @@ async function main() {
         return sendJson(res, 200, data);
       } catch (error) {
         return sendJson(res, 500, { error: String(error?.message || error) });
+      }
+    }
+
+    if (url.pathname === "/api/import-roster" && req.method === "POST") {
+      try {
+        const username = requireAuth(req, res);
+        if (!username) return;
+        const body = await readJsonBody(req);
+        const result = await importRosterWorkbook({
+          fileName: String(body.fileName || ""),
+          fileBase64: String(body.fileBase64 || ""),
+          termInput: String(body.termInput || ""),
+        });
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = String(error?.message || error);
+        return sendJson(res, /学年度学期格式|请先选择 Excel 文件/.test(message) ? 400 : 500, { error: message });
       }
     }
 

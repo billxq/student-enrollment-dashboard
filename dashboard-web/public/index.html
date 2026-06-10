@@ -31,86 +31,119 @@
       </section>
     </main>
 
-    <div id="appShell" class="page-shell" hidden>
-      <header class="hero glass">
-        <div class="brand-stack">
+    <div id="appShell" class="app-shell" hidden>
+      <header class="topbar glass">
+        <div class="topbar-brand">
           <div class="logo-frame logo-frame-hero">
             <img id="appLogo" class="brand-logo brand-logo-hero" src="/assets/logo.png" alt="学校 logo" />
           </div>
-          <div class="brand-copy">
+          <div class="topbar-copy">
             <p class="eyebrow">Student Enrollment Dashboard</p>
             <h1 id="appTitle">上师附小学籍信息系统</h1>
             <p id="appSubTitle" class="hero-copy">按学年度、年级、班级直接筛选查看，汇总全校、分年级和分班级的关键学籍数据。</p>
           </div>
         </div>
 
-        <div class="hero-meta">
-          <div class="meta-card">
+        <div class="topbar-actions">
+          <div class="meta-card meta-card-inline">
             <span>数据更新时间</span>
             <strong id="generatedAt">加载中</strong>
           </div>
-          <div class="meta-card">
+          <div class="meta-card meta-card-inline">
             <span>可用学年度</span>
             <strong id="yearCount">0</strong>
           </div>
-          <div class="meta-card user-card">
+          <div class="meta-card meta-card-inline">
             <span>当前用户</span>
             <strong id="currentUser">admin</strong>
           </div>
-          <button id="changePasswordBtn" type="button" class="meta-action">修改密码</button>
-          <button id="logoutBtn" type="button" class="meta-action ghost">退出登录</button>
+          <div class="topbar-buttons">
+            <button id="changePasswordBtn" type="button" class="meta-action">修改密码</button>
+            <button id="logoutBtn" type="button" class="meta-action ghost">退出登录</button>
+          </div>
         </div>
       </header>
 
       <section id="appStatus" class="status-banner" hidden></section>
 
-      <section class="filters glass">
-        <div class="filter-group">
-          <label for="yearSelect">学年度</label>
-          <select id="yearSelect"></select>
+      <section class="section-block">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">交人数</p>
+            <h2>全校概览</h2>
+          </div>
+          <span id="gradeSummary">-</span>
         </div>
-        <div class="filter-group">
-          <label for="gradeSelect">年级</label>
-          <select id="gradeSelect"></select>
-        </div>
-        <div class="filter-group">
-          <label for="classSelect">班级</label>
-          <select id="classSelect"></select>
-        </div>
-        <div class="filter-group">
-          <label for="searchInput">姓名搜索</label>
-          <input id="searchInput" type="search" placeholder="输入学生姓名" />
-        </div>
-        <button id="resetBtn" class="reset-btn" type="button">重置筛选</button>
+        <section class="kpis" id="kpiGrid"></section>
       </section>
 
-      <section class="kpis" id="kpiGrid"></section>
-
-      <section class="content-grid">
-        <article class="glass panel">
-          <div class="panel-head">
-            <h2>年级分布</h2>
-            <span id="gradeSummary">-</span>
+      <section class="section-block">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">分布情况</p>
+            <h2>年级与班级分布</h2>
           </div>
-          <div id="gradeChart" class="chart"></div>
-        </article>
-        <article class="glass panel">
-          <div class="panel-head">
-            <h2>班级分布</h2>
-            <span id="classSummary">-</span>
-          </div>
-          <div id="classChart" class="chart"></div>
-        </article>
+          <span id="classSummary">-</span>
+        </div>
+        <section class="content-grid">
+          <article class="glass panel">
+            <div class="panel-head">
+              <h3>年级分布</h3>
+              <span>当前筛选范围</span>
+            </div>
+            <div id="gradeChart" class="chart"></div>
+          </article>
+          <article class="glass panel">
+            <div class="panel-head">
+              <h3>班级分布</h3>
+              <span>当前筛选范围</span>
+            </div>
+            <div id="classChart" class="chart"></div>
+          </article>
+        </section>
       </section>
 
-      <section class="glass panel">
+      <section class="section-block glass panel">
+        <div class="section-head section-head-tight">
+          <div>
+            <p class="section-kicker">筛选</p>
+            <h2>快速定位数据</h2>
+          </div>
+          <button id="resetBtn" class="reset-btn" type="button">重置筛选</button>
+        </div>
+        <div class="filters">
+          <div class="filter-group">
+            <label for="yearSelect">学年度</label>
+            <select id="yearSelect"></select>
+          </div>
+          <div class="filter-group">
+            <label for="gradeSelect">年级</label>
+            <select id="gradeSelect"></select>
+          </div>
+          <div class="filter-group">
+            <label for="classSelect">班级</label>
+            <select id="classSelect"></select>
+          </div>
+          <div class="filter-group">
+            <label for="searchInput">姓名搜索</label>
+            <input id="searchInput" type="search" placeholder="输入学生姓名" />
+          </div>
+        </div>
+      </section>
+
+      <section class="section-block glass panel">
         <div class="panel-head">
           <div class="detail-head">
-            <h2>学生详细信息</h2>
+            <div>
+              <p class="section-kicker">学生详细信息</p>
+              <h2>明细列表</h2>
+            </div>
             <button id="detailToggleBtn" class="ghost-btn" type="button">展开查看</button>
           </div>
           <span id="detailSummary">-</span>
         </div>
+        <div id="detailHint" class="detail-hint">当前默认不展示，点击“展开查看”即可查看完整学生列表。</div>
+
         <div id="detailFilters" class="detail-filters" hidden>
           <div class="filter-group">
             <label for="detailSearchInput">姓名筛选</label>
@@ -120,8 +153,8 @@
             <label for="detailGenderSelect">性别</label>
             <select id="detailGenderSelect">
               <option value="all">全部性别</option>
-              <option value="男性">男性</option>
-              <option value="女性">女性</option>
+              <option value="男">男</option>
+              <option value="女">女</option>
             </select>
           </div>
           <div class="filter-group">
@@ -142,19 +175,21 @@
           </div>
           <button id="detailResetBtn" class="reset-btn" type="button">重置明细筛选</button>
         </div>
+
         <div id="detailQuickBar" class="detail-quick" hidden>
           <span class="detail-quick-label">快捷开关</span>
           <div class="detail-quick-group">
             <button type="button" class="detail-chip" data-detail-filter="status" data-detail-value="在读">在读</button>
             <button type="button" class="detail-chip" data-detail-filter="status" data-detail-value="休学">休学</button>
-            <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="男性">男性</button>
-            <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="女性">女性</button>
+            <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="男">男生</button>
+            <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="女">女生</button>
             <button type="button" class="detail-chip" data-detail-filter="city" data-detail-value="本市户籍">本市户籍</button>
             <button type="button" class="detail-chip" data-detail-filter="city" data-detail-value="非本市户籍">非本市户籍</button>
             <button type="button" class="detail-chip" data-detail-filter="ethnicity" data-detail-value="外籍">外籍</button>
             <button type="button" class="detail-chip detail-chip-ghost" data-detail-filter="reset" data-detail-value="all">全部</button>
           </div>
         </div>
+
         <div id="detailPanel" class="table-wrap" hidden>
           <table class="data-table">
             <thead>
@@ -174,7 +209,6 @@
             <tbody id="studentTbody"></tbody>
           </table>
         </div>
-        <div id="detailHint" class="detail-hint">当前默认不展示，点击“展开查看”即可查看完整学生列表。</div>
       </section>
 
       <div id="passwordOverlay" class="modal-overlay" hidden>

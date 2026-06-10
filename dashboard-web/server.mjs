@@ -8,8 +8,10 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SERVER_DIR, "..");
 const PUBLIC_DIR = path.join(SERVER_DIR, "public");
 const AUTH_FILE = path.join(SERVER_DIR, "auth.json");
-const DATA_FILE = path.join(SERVER_DIR, "data.json");
+const DATA_SEALED_FILE = path.join(SERVER_DIR, "data.sealed.json");
+const DATA_PLAINTEXT_FILE = path.join(SERVER_DIR, "data.json");
 const PORT = Number(process.env.PORT || 4173);
+const DATA_PASSPHRASE = process.env.DATA_PASSPHRASE || process.env.DATA_KEY || "";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -23,7 +25,6 @@ const MIME = {
 const sessions = new Map();
 const dataCache = {
   value: null,
-  key: "",
   promise: null,
 };
 
@@ -66,8 +67,7 @@ async function readAuthStore() {
 }
 
 async function writeAuthStore(store) {
-  const normalized = normalizeAuthStore(store);
-  await fs.writeFile(AUTH_FILE, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  await fs.writeFile(AUTH_FILE, `${JSON.stringify(normalizeAuthStore(store), null, 2)}\n`, "utf8");
 }
 
 async function verifyCredentials(username, password) {
@@ -108,7 +108,7 @@ function getCurrentUser(req) {
 function requireAuth(req, res) {
   const user = getCurrentUser(req);
   if (!user) {
-    sendJson(res, 401, { error: "未登录或登录已过期" });
+    sendJson(res, 401, { error: "\u672a\u767b\u5f55\u6216\u767b\u5f55\u5df2\u8fc7\u671f" });
     return null;
   }
   return user;
@@ -134,163 +134,46 @@ async function readJsonBody(req) {
   return JSON.parse(raw);
 }
 
-function isIgnoredDir(name) {
-  return ["node_modules", "outputs", ".git", ".codex", "dist"].includes(name);
-}
-
-async function walkXlsx(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  const results = [];
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      if (isIgnoredDir(entry.name)) continue;
-      results.push(...(await walkXlsx(path.join(dir, entry.name))));
-      continue;
-    }
-    if (entry.isFile() && entry.name.endsWith(".xlsx")) {
-      results.push(path.join(dir, entry.name));
-    }
-  }
-  return results;
-}
-
-function asPosix(p) {
-  return p.split(path.sep).join("/");
-}
-
-function inferYearLabel(filePath) {
-  const normalized = asPosix(path.relative(ROOT, filePath));
-  const folderMatch = normalized.match(/(\d{4})学年度/);
-  if (folderMatch) return `${folderMatch[1]}学年度`;
-  const nameMatch = path.basename(filePath).match(/^(\d{4})年度\.xlsx$/);
-  if (nameMatch) return `${nameMatch[1]}学年度`;
-  const anyMatch = normalized.match(/(\d{4})/);
-  return anyMatch ? `${anyMatch[1]}学年度` : path.basename(filePath, ".xlsx");
-}
-
-function isForeignStudent(idType, studentCategory) {
-  const text = `${idType} ${studentCategory}`.toLowerCase();
-  return /护照|passport|外国|外籍|港澳|台胞/.test(text);
-}
-
-function classifyEthnicity(idType, studentCategory, ethnicity) {
-  if (isForeignStudent(idType, studentCategory)) return "外籍";
-  if (ethnicity === "汉族") return "汉族";
-  if (!ethnicity || ethnicity === "其他") return "其他/未明确";
-  return "少数民族";
-}
-
-function pickPrimaryRows(values) {
-  if (!values.length) return [];
-
-  const headers = values[0].map((h) => String(h ?? "").trim());
-  const idx = Object.fromEntries(headers.map((h, i) => [h, i]));
-  const required = [
-    "学生姓名",
-    "学生年级",
-    "学生班级名称",
-    "学生性别",
-    "学生当前状态",
-    "学生户口省份",
-    "学生民族",
-    "学生身份证件类型",
-    "学生学生类别",
-  ];
-
-  if (!required.every((h) => h in idx)) return [];
-
-  const rows = [];
-  for (let r = 1; r < values.length; r += 1) {
-    const row = values[r];
-    const province = String(row[idx["学生户口省份"]] ?? "").trim();
-    const ethnicity = String(row[idx["学生民族"]] ?? "").trim();
-    const idType = String(row[idx["学生身份证件类型"]] ?? "").trim();
-    const studentCategory = String(row[idx["学生学生类别"]] ?? "").trim();
-    rows.push({
-      name: String(row[idx["学生姓名"]] ?? "").trim(),
-      grade: String(row[idx["学生年级"]] ?? "").trim(),
-      className: String(row[idx["学生班级名称"]] ?? "").trim(),
-      gender: String(row[idx["学生性别"]] ?? "").trim(),
-      status: String(row[idx["学生当前状态"]] ?? "").trim(),
-      province,
-      ethnicity,
-      idType,
-      studentCategory,
-      cityStatus: province === "上海市" ? "本市户籍" : "非本市户籍",
-      ethnicityGroup: classifyEthnicity(idType, studentCategory, ethnicity),
-    });
+function decodeSealedData(raw) {
+  if (!DATA_PASSPHRASE) {
+    throw new Error("\u7f3a\u5c11 DATA_PASSPHRASE \u89e3\u5bc6\u5bc6\u94a5");
   }
 
-  return rows.filter((row) => row.name);
-}
-
-async function loadWorkbook(filePath) {
-  const { FileBlob, SpreadsheetFile } = await import("@oai/artifact-tool");
-  const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(filePath));
-  const firstSheet = wb.worksheets.getItemAt(0);
-  const rows = pickPrimaryRows(firstSheet.getUsedRange().values);
-  return {
-    yearLabel: inferYearLabel(filePath),
-    sourceFile: path.relative(ROOT, filePath).split(path.sep).join("/"),
-    sourceName: path.basename(filePath),
-    mtimeMs: (await fs.stat(filePath)).mtimeMs,
-    rows,
-  };
-}
-
-async function rebuildDataFromExcel() {
-  const candidates = await walkXlsx(ROOT);
-  const datasets = [];
-
-  for (const filePath of candidates) {
-    try {
-      const data = await loadWorkbook(filePath);
-      if (data.rows.length > 0) datasets.push(data);
-    } catch {
-      // Ignore workbooks that do not match the enrollment format.
-    }
+  const sealed = JSON.parse(raw);
+  if (sealed.version !== 1 || sealed.algorithm !== "aes-256-gcm") {
+    throw new Error("\u4e0d\u652f\u6301\u7684\u6570\u636e\u52a0\u5bc6\u683c\u5f0f");
   }
 
-  const byYear = new Map();
-  for (const item of datasets) {
-    const existing = byYear.get(item.yearLabel);
-    if (
-      !existing ||
-      item.mtimeMs > existing.mtimeMs ||
-      (item.mtimeMs === existing.mtimeMs && item.sourceFile.length < existing.sourceFile.length)
-    ) {
-      byYear.set(item.yearLabel, item);
-    }
-  }
-
-  const years = [...byYear.values()]
-    .sort((a, b) => b.yearLabel.localeCompare(a.yearLabel, "zh-Hans-CN"))
-    .map((item) => ({
-      yearLabel: item.yearLabel,
-      sourceFile: item.sourceFile,
-      sourceName: item.sourceName,
-      mtimeMs: item.mtimeMs,
-      rows: item.rows,
-    }));
-
-  return { generatedAt: new Date().toISOString(), years };
+  const salt = Buffer.from(sealed.salt, "base64");
+  const iv = Buffer.from(sealed.iv, "base64");
+  const tag = Buffer.from(sealed.tag, "base64");
+  const ciphertext = Buffer.from(sealed.ciphertext, "base64");
+  const key = crypto.scryptSync(DATA_PASSPHRASE, salt, 32);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  return JSON.parse(plaintext);
 }
 
 async function loadData() {
   if (dataCache.promise) return dataCache.promise;
 
   dataCache.promise = (async () => {
+    if (dataCache.value) return dataCache.value;
+
     try {
-      const raw = await fs.readFile(DATA_FILE, "utf8");
-      const value = JSON.parse(raw);
-      dataCache.key = `${value.generatedAt || ""}:${value.years?.length || 0}`;
+      const raw = await fs.readFile(DATA_SEALED_FILE, "utf8");
+      const value = decodeSealedData(raw);
       dataCache.value = value;
       return value;
-    } catch {
-      const value = await rebuildDataFromExcel();
-      dataCache.key = `${value.generatedAt || ""}:${value.years?.length || 0}`;
-      dataCache.value = value;
-      return value;
+    } catch (error) {
+      if (await fileExists(DATA_PLAINTEXT_FILE)) {
+        const raw = await fs.readFile(DATA_PLAINTEXT_FILE, "utf8");
+        const value = JSON.parse(raw.replace(/^\uFEFF/, ""));
+        dataCache.value = value;
+        return value;
+      }
+      throw error;
     }
   })().finally(() => {
     dataCache.promise = null;
@@ -299,11 +182,20 @@ async function loadData() {
   return dataCache.promise;
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function changePassword(username, currentPassword, newPassword) {
   const store = await readAuthStore();
   const user = store.users?.[username];
-  if (!user) return { ok: false, error: "用户不存在" };
-  if (user.passwordHash !== sha256(currentPassword)) return { ok: false, error: "当前密码不正确" };
+  if (!user) return { ok: false, error: "\u7528\u6237\u4e0d\u5b58\u5728" };
+  if (user.passwordHash !== sha256(currentPassword)) return { ok: false, error: "\u5f53\u524d\u5bc6\u7801\u4e0d\u6b63\u786e" };
 
   store.users[username] = {
     passwordHash: sha256(newPassword),
@@ -354,9 +246,9 @@ async function main() {
         const body = await readJsonBody(req);
         const username = String(body.username || "").trim();
         const password = String(body.password || "");
-        if (!username || !password) return sendJson(res, 400, { error: "请输入用户名和密码" });
+        if (!username || !password) return sendJson(res, 400, { error: "\u8bf7\u8f93\u5165\u7528\u6237\u540d\u548c\u5bc6\u7801" });
         const ok = await verifyCredentials(username, password);
-        if (!ok) return sendJson(res, 401, { error: "用户名或密码错误" });
+        if (!ok) return sendJson(res, 401, { error: "\u7528\u6237\u540d\u6216\u5bc6\u7801\u9519\u8bef" });
         const token = createToken();
         await persistSession(token, username);
         return sendJson(res, 200, { token, username });
@@ -367,7 +259,7 @@ async function main() {
 
     if (url.pathname === "/api/me") {
       const username = getCurrentUser(req);
-      if (!username) return sendJson(res, 401, { error: "未登录" });
+      if (!username) return sendJson(res, 401, { error: "\u672a\u767b\u5f55" });
       return sendJson(res, 200, { username });
     }
 
@@ -380,13 +272,13 @@ async function main() {
         const newPassword = String(body.newPassword || "");
         const confirmPassword = String(body.confirmPassword || "");
         if (!currentPassword || !newPassword) {
-          return sendJson(res, 400, { error: "请输入当前密码和新密码" });
+          return sendJson(res, 400, { error: "\u8bf7\u8f93\u5165\u5f53\u524d\u5bc6\u7801\u548c\u65b0\u5bc6\u7801" });
         }
         if (newPassword.length < 6) {
-          return sendJson(res, 400, { error: "新密码至少 6 位" });
+          return sendJson(res, 400, { error: "\u65b0\u5bc6\u7801\u81f3\u5c116\u4f4d" });
         }
         if (newPassword !== confirmPassword) {
-          return sendJson(res, 400, { error: "两次输入的新密码不一致" });
+          return sendJson(res, 400, { error: "\u4e24\u6b21\u8f93\u5165\u7684\u65b0\u5bc6\u7801\u4e0d\u4e00\u81f4" });
         }
         const result = await changePassword(username, currentPassword, newPassword);
         if (!result.ok) return sendJson(res, 400, { error: result.error });
@@ -411,7 +303,7 @@ async function main() {
   });
 
   server.listen(PORT, () => {
-    console.log(`学籍看板已启动：http://localhost:${PORT}`);
+    console.log(`\u5b66\u7c4d\u770b\u677f\u5df2\u542f\u52a8\uff1ahttp://localhost:${PORT}`);
   });
 }
 

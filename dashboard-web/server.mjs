@@ -3,12 +3,12 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { FileBlob, SpreadsheetFile } from "@oai/artifact-tool";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SERVER_DIR, "..");
 const PUBLIC_DIR = path.join(SERVER_DIR, "public");
 const AUTH_FILE = path.join(SERVER_DIR, "auth.json");
+const DATA_FILE = path.join(SERVER_DIR, "data.json");
 const PORT = Number(process.env.PORT || 4173);
 
 const MIME = {
@@ -22,8 +22,8 @@ const MIME = {
 
 const sessions = new Map();
 const dataCache = {
-  key: "",
   value: null,
+  key: "",
   promise: null,
 };
 
@@ -66,7 +66,8 @@ async function readAuthStore() {
 }
 
 async function writeAuthStore(store) {
-  await fs.writeFile(AUTH_FILE, `${JSON.stringify(normalizeAuthStore(store), null, 2)}\n`, "utf8");
+  const normalized = normalizeAuthStore(store);
+  await fs.writeFile(AUTH_FILE, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
 }
 
 async function verifyCredentials(username, password) {
@@ -143,7 +144,7 @@ async function walkXlsx(dir) {
   for (const entry of entries) {
     if (entry.isDirectory()) {
       if (isIgnoredDir(entry.name)) continue;
-      results.push(...await walkXlsx(path.join(dir, entry.name)));
+      results.push(...(await walkXlsx(path.join(dir, entry.name))));
       continue;
     }
     if (entry.isFile() && entry.name.endsWith(".xlsx")) {
@@ -151,23 +152,6 @@ async function walkXlsx(dir) {
     }
   }
   return results;
-}
-
-async function snapshotWorkbookSources() {
-  const candidates = await walkXlsx(ROOT);
-  const snapshot = [];
-
-  for (const filePath of candidates) {
-    const stat = await fs.stat(filePath);
-    snapshot.push({
-      filePath: path.relative(ROOT, filePath).split(path.sep).join("/"),
-      mtimeMs: stat.mtimeMs,
-      size: stat.size,
-    });
-  }
-
-  snapshot.sort((a, b) => a.filePath.localeCompare(b.filePath, "zh-Hans-CN"));
-  return snapshot;
 }
 
 function asPosix(p) {
@@ -212,6 +196,7 @@ function pickPrimaryRows(values) {
     "学生身份证件类型",
     "学生学生类别",
   ];
+
   if (!required.every((h) => h in idx)) return [];
 
   const rows = [];
@@ -236,10 +221,11 @@ function pickPrimaryRows(values) {
     });
   }
 
-  return rows.filter((r) => r.name);
+  return rows.filter((row) => row.name);
 }
 
 async function loadWorkbook(filePath) {
+  const { FileBlob, SpreadsheetFile } = await import("@oai/artifact-tool");
   const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(filePath));
   const firstSheet = wb.worksheets.getItemAt(0);
   const rows = pickPrimaryRows(firstSheet.getUsedRange().values);
@@ -252,55 +238,60 @@ async function loadWorkbook(filePath) {
   };
 }
 
+async function rebuildDataFromExcel() {
+  const candidates = await walkXlsx(ROOT);
+  const datasets = [];
+
+  for (const filePath of candidates) {
+    try {
+      const data = await loadWorkbook(filePath);
+      if (data.rows.length > 0) datasets.push(data);
+    } catch {
+      // Ignore workbooks that do not match the enrollment format.
+    }
+  }
+
+  const byYear = new Map();
+  for (const item of datasets) {
+    const existing = byYear.get(item.yearLabel);
+    if (
+      !existing ||
+      item.mtimeMs > existing.mtimeMs ||
+      (item.mtimeMs === existing.mtimeMs && item.sourceFile.length < existing.sourceFile.length)
+    ) {
+      byYear.set(item.yearLabel, item);
+    }
+  }
+
+  const years = [...byYear.values()]
+    .sort((a, b) => b.yearLabel.localeCompare(a.yearLabel, "zh-Hans-CN"))
+    .map((item) => ({
+      yearLabel: item.yearLabel,
+      sourceFile: item.sourceFile,
+      sourceName: item.sourceName,
+      mtimeMs: item.mtimeMs,
+      rows: item.rows,
+    }));
+
+  return { generatedAt: new Date().toISOString(), years };
+}
+
 async function loadData() {
   if (dataCache.promise) return dataCache.promise;
 
   dataCache.promise = (async () => {
-    const sourceSnapshot = await snapshotWorkbookSources();
-    const sourceKey = JSON.stringify(sourceSnapshot);
-
-    if (dataCache.value && dataCache.key === sourceKey) {
-      return dataCache.value;
+    try {
+      const raw = await fs.readFile(DATA_FILE, "utf8");
+      const value = JSON.parse(raw);
+      dataCache.key = `${value.generatedAt || ""}:${value.years?.length || 0}`;
+      dataCache.value = value;
+      return value;
+    } catch {
+      const value = await rebuildDataFromExcel();
+      dataCache.key = `${value.generatedAt || ""}:${value.years?.length || 0}`;
+      dataCache.value = value;
+      return value;
     }
-
-    const candidates = sourceSnapshot.map((item) => path.join(ROOT, item.filePath));
-    const datasets = [];
-
-    for (const filePath of candidates) {
-      try {
-        const data = await loadWorkbook(filePath);
-        if (data.rows.length > 0) datasets.push(data);
-      } catch {
-        // Ignore workbooks that do not match the enrollment format.
-      }
-    }
-
-    const byYear = new Map();
-    for (const item of datasets) {
-      const existing = byYear.get(item.yearLabel);
-      if (
-        !existing ||
-        item.mtimeMs > existing.mtimeMs ||
-        (item.mtimeMs === existing.mtimeMs && item.sourceFile.length < existing.sourceFile.length)
-      ) {
-        byYear.set(item.yearLabel, item);
-      }
-    }
-
-    const years = [...byYear.values()]
-      .sort((a, b) => b.yearLabel.localeCompare(a.yearLabel, "zh-Hans-CN"))
-      .map((item) => ({
-        yearLabel: item.yearLabel,
-        sourceFile: item.sourceFile,
-        sourceName: item.sourceName,
-        mtimeMs: item.mtimeMs,
-        rows: item.rows,
-      }));
-
-    const value = { generatedAt: new Date().toISOString(), years };
-    dataCache.key = sourceKey;
-    dataCache.value = value;
-    return value;
   })().finally(() => {
     dataCache.promise = null;
   });
@@ -323,9 +314,11 @@ async function changePassword(username, currentPassword, newPassword) {
     if (entry?.username === username) delete store.sessions[token];
   }
   await writeAuthStore(store);
+
   for (const [token, name] of sessions.entries()) {
     if (name === username) sessions.delete(token);
   }
+
   return { ok: true };
 }
 
@@ -336,6 +329,7 @@ async function serveStatic(req, res, pathname) {
   const filePath = path.join(assetRoot, relativePath);
   const normalized = path.normalize(filePath);
   const allowedRoots = [path.normalize(PUBLIC_DIR), path.normalize(path.join(ROOT, "assets"))];
+
   if (!allowedRoots.some((root) => normalized.startsWith(root))) {
     return send(res, 403, "Forbidden");
   }
@@ -385,9 +379,15 @@ async function main() {
         const currentPassword = String(body.currentPassword || "");
         const newPassword = String(body.newPassword || "");
         const confirmPassword = String(body.confirmPassword || "");
-        if (!currentPassword || !newPassword) return sendJson(res, 400, { error: "请输入当前密码和新密码" });
-        if (newPassword.length < 6) return sendJson(res, 400, { error: "新密码至少 6 位" });
-        if (newPassword !== confirmPassword) return sendJson(res, 400, { error: "两次输入的新密码不一致" });
+        if (!currentPassword || !newPassword) {
+          return sendJson(res, 400, { error: "请输入当前密码和新密码" });
+        }
+        if (newPassword.length < 6) {
+          return sendJson(res, 400, { error: "新密码至少 6 位" });
+        }
+        if (newPassword !== confirmPassword) {
+          return sendJson(res, 400, { error: "两次输入的新密码不一致" });
+        }
         const result = await changePassword(username, currentPassword, newPassword);
         if (!result.ok) return sendJson(res, 400, { error: result.error });
         return sendJson(res, 200, { ok: true });
@@ -412,10 +412,6 @@ async function main() {
 
   server.listen(PORT, () => {
     console.log(`学籍看板已启动：http://localhost:${PORT}`);
-  });
-
-  void loadData().catch(() => {
-    // Warm the cache in the background; request handling will still work if this fails.
   });
 }
 

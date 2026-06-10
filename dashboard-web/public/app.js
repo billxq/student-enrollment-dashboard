@@ -8,9 +8,13 @@ const state = {
   detailGender: "all",
   detailStatus: "all",
   detailCity: "all",
+  detailEthnicityRaw: "all",
+  detailIdType: "all",
+  detailClass: "all",
   detailEthnicity: "all",
   detailOpen: false,
   passwordOpen: false,
+  importOpen: false,
   loading: false,
   token: localStorage.getItem("authToken") || "",
   username: localStorage.getItem("authUser") || "",
@@ -49,9 +53,13 @@ const els = {
   detailGenderSelect: document.getElementById("detailGenderSelect"),
   detailStatusSelect: document.getElementById("detailStatusSelect"),
   detailCitySelect: document.getElementById("detailCitySelect"),
+  detailIdTypeSelect: document.getElementById("detailIdTypeSelect"),
+  detailEthnicitySelect: document.getElementById("detailEthnicitySelect"),
+  detailClassSelect: document.getElementById("detailClassSelect"),
   detailResetBtn: document.getElementById("detailResetBtn"),
   studentTbody: document.getElementById("studentTbody"),
   changePasswordBtn: document.getElementById("changePasswordBtn"),
+  importRosterBtn: document.getElementById("importRosterBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
   passwordOverlay: document.getElementById("passwordOverlay"),
   closePasswordBtn: document.getElementById("closePasswordBtn"),
@@ -60,6 +68,14 @@ const els = {
   newPassword: document.getElementById("newPassword"),
   confirmPassword: document.getElementById("confirmPassword"),
   passwordMessage: document.getElementById("passwordMessage"),
+  importOverlay: document.getElementById("importOverlay"),
+  closeImportBtn: document.getElementById("closeImportBtn"),
+  importRosterForm: document.getElementById("importRosterForm"),
+  importFileInput: document.getElementById("importFileInput"),
+  importTermInput: document.getElementById("importTermInput"),
+  importTemplateLink: document.getElementById("importTemplateLink"),
+  importMessage: document.getElementById("importMessage"),
+  importSubmitBtn: document.getElementById("importSubmitBtn"),
 };
 
 function formatCount(value) {
@@ -83,7 +99,7 @@ function latestYearLabel() {
 function gradeOrder(text) {
   const match = String(text || "").match(/([一二三四五六七八九十]+)年级/);
   if (!match) return 99;
-  const map = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  const map = { һ: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, ʮ: 10 };
   return [...match[1]].reduce((n, ch) => n * 10 + (map[ch] ?? 0), 0);
 }
 
@@ -100,6 +116,11 @@ function sortedGrades(rows) {
 
 function sortedClasses(rows) {
   return uniq(rows.map((row) => row.className)).sort((a, b) => classOrder(a) - classOrder(b));
+}
+
+function sortedEthnicities(rows) {
+  const collator = new Intl.Collator("zh-CN");
+  return uniq(rows.map((row) => row.ethnicity)).sort((a, b) => collator.compare(a, b));
 }
 
 function setSession(token, username) {
@@ -139,6 +160,13 @@ function getActiveRows() {
   return years.flatMap((year) => year.rows.map((row) => ({ ...row, yearLabel: year.yearLabel })));
 }
 
+function getScopedRows() {
+  let rows = getActiveRows();
+  if (state.grade !== "all") rows = rows.filter((row) => row.grade === state.grade);
+  if (state.className !== "all") rows = rows.filter((row) => row.className === state.className);
+  return rows;
+}
+
 function getFilteredRows() {
   let rows = getActiveRows();
   if (state.grade !== "all") rows = rows.filter((row) => row.grade === state.grade);
@@ -152,28 +180,42 @@ function getDetailFilteredRows(rows) {
   let result = rows;
   const query = state.detailSearch.trim();
   if (query) result = result.filter((row) => row.name.includes(query));
-  if (state.detailGender !== "all") result = result.filter((row) => row.gender === state.detailGender);
+  if (state.detailGender !== "all") result = result.filter((row) => genderMatches(row.gender, state.detailGender));
   if (state.detailStatus !== "all") result = result.filter((row) => row.status === state.detailStatus);
   if (state.detailCity !== "all") result = result.filter((row) => row.cityStatus === state.detailCity);
+  if (state.detailEthnicityRaw !== "all") result = result.filter((row) => row.ethnicity === state.detailEthnicityRaw);
+  if (state.detailIdType !== "all") result = result.filter((row) => row.idType === state.detailIdType);
+  if (state.detailClass !== "all") result = result.filter((row) => row.className === state.detailClass);
   if (state.detailEthnicity !== "all") result = result.filter((row) => row.ethnicityGroup === state.detailEthnicity);
   return result;
 }
 
+function genderMatches(gender, filterValue) {
+  const value = String(gender || "");
+  if (filterValue === "all") return true;
+  if (filterValue === "男") return value.includes("男");
+  if (filterValue === "女") return value.includes("女");
+  return value === filterValue || value.includes(filterValue);
+}
+
 function countRows(rows) {
+  const foreignCount = rows.filter((row) => row.ethnicityGroup === "外籍").length;
   return {
     total: rows.length,
-    male: rows.filter((row) => row.gender.includes("男")).length,
-    female: rows.filter((row) => row.gender.includes("女")).length,
+    male: rows.filter((row) => genderMatches(row.gender, "男")).length,
+    female: rows.filter((row) => genderMatches(row.gender, "女")).length,
     city: rows.filter((row) => row.cityStatus === "本市户籍").length,
-    nonCity: rows.filter((row) => row.cityStatus !== "本市户籍").length,
+    nonCity: rows.filter((row) => row.cityStatus !== "本市户籍" && row.ethnicityGroup !== "外籍").length,
     active: rows.filter((row) => row.status === "在读").length,
     suspended: rows.filter((row) => row.status === "休学").length,
     minority: rows.filter((row) => row.ethnicityGroup === "少数民族").length,
-    foreign: rows.filter((row) => row.ethnicityGroup === "外籍").length,
+    foreign: foreignCount,
   };
 }
 
 function renderKpis(rows) {
+
+
   const c = countRows(rows);
   const cards = [
     ["总人数", c.total, "当前筛选范围内"],
@@ -240,6 +282,7 @@ function renderTable(rows) {
           <td>${row.gender}</td>
           <td>${row.status}</td>
           <td>${row.cityStatus}</td>
+          <td>${row.idType}</td>
           <td>${row.ethnicity}</td>
           <td>${row.ethnicityGroup}</td>
         </tr>
@@ -270,12 +313,31 @@ function syncOptions() {
   els.classSelect.innerHTML = [`<option value="all">全部班级</option>`, ...classes.map((className) => `<option value="${className}">${className}</option>`)].join("");
   els.classSelect.value = classes.includes(currentClass) || currentClass === "all" ? currentClass : "all";
   state.className = els.classSelect.value;
+
+  if (els.detailClassSelect) {
+    els.detailClassSelect.innerHTML = [`<option value="all">全部班级</option>`, ...classes.map((className) => `<option value="${className}">${className}</option>`)].join("");
+    els.detailClassSelect.value = classes.includes(state.detailClass) || state.detailClass === "all" ? state.detailClass : "all";
+    state.detailClass = els.detailClassSelect.value;
+  }
+
+  if (els.detailEthnicitySelect) {
+    const ethnicityRows = getScopedRows();
+    const ethnicities = sortedEthnicities(ethnicityRows);
+    els.detailEthnicitySelect.innerHTML = [`<option value="all">全部民族</option>`, ...ethnicities.map((ethnicity) => `<option value="${ethnicity}">${ethnicity}</option>`)].join("");
+    els.detailEthnicitySelect.value = ethnicities.includes(state.detailEthnicityRaw) || state.detailEthnicityRaw === "all" ? state.detailEthnicityRaw : "all";
+    state.detailEthnicityRaw = els.detailEthnicitySelect.value;
+  }
+
+  if (els.detailIdTypeSelect) {
+    const idTypes = uniq(yearRows.map((row) => row.idType)).sort(new Intl.Collator("zh-CN").compare);
+    els.detailIdTypeSelect.innerHTML = [`<option value="all">全部证件类型</option>`, ...idTypes.map((idType) => `<option value="${idType}">${idType}</option>`)].join("");
+    els.detailIdTypeSelect.value = idTypes.includes(state.detailIdType) || state.detailIdType === "all" ? state.detailIdType : "all";
+    state.detailIdType = els.detailIdTypeSelect.value;
+  }
 }
 
 function renderMeta() {
-  els.generatedAt.textContent = new Date(state.data.generatedAt).toLocaleString("zh-CN");
-  els.yearCount.textContent = formatCount(state.data.years.length);
-  els.currentUser.textContent = state.username || "admin";
+  if (els.currentUser) els.currentUser.textContent = state.username || "admin";
   els.yearSelect.innerHTML = [
     `<option value="all">全部学年度</option>`,
     ...state.data.years.map((year) => `<option value="${year.yearLabel}">${year.yearLabel}</option>`),
@@ -297,11 +359,15 @@ function setAppStatus(message = "", kind = "info") {
 }
 
 function showApp() {
+  closePasswordPanel();
+  closeImportPanel();
   els.loginScreen.hidden = true;
   els.appShell.hidden = false;
 }
 
 function showLogin(message = "") {
+  closePasswordPanel();
+  closeImportPanel();
   els.loginScreen.hidden = false;
   els.appShell.hidden = true;
   els.loginError.textContent = message;
@@ -322,16 +388,45 @@ function closePasswordPanel() {
   els.passwordOverlay.hidden = true;
 }
 
+function openImportPanel() {
+  state.importOpen = true;
+  els.importOverlay.hidden = false;
+  els.importMessage.textContent = "";
+  els.importRosterForm.reset();
+  setTimeout(() => els.importFileInput.focus(), 0);
+}
+
+function closeImportPanel() {
+  state.importOpen = false;
+  els.importOverlay.hidden = true;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function resetDetailFilters() {
   state.detailSearch = "";
   state.detailGender = "all";
   state.detailStatus = "all";
   state.detailCity = "all";
+  state.detailEthnicityRaw = "all";
+  state.detailIdType = "all";
+  state.detailClass = "all";
   state.detailEthnicity = "all";
   els.detailSearchInput.value = "";
   els.detailGenderSelect.value = "all";
   els.detailStatusSelect.value = "all";
   els.detailCitySelect.value = "all";
+  if (els.detailEthnicitySelect) els.detailEthnicitySelect.value = "all";
+  if (els.detailIdTypeSelect) els.detailIdTypeSelect.value = "all";
+  if (els.detailClassSelect) els.detailClassSelect.value = "all";
 }
 
 function syncDetailQuickState() {
@@ -347,11 +442,13 @@ function syncDetailQuickState() {
     if (filter === "ethnicity") active = state.detailEthnicity === value;
     if (filter === "reset") {
       active =
-        state.detailSearch === "" &&
-        state.detailGender === "all" &&
-        state.detailStatus === "all" &&
-        state.detailCity === "all" &&
-        state.detailEthnicity === "all";
+      state.detailSearch === "" &&
+      state.detailGender === "all" &&
+      state.detailStatus === "all" &&
+      state.detailCity === "all" &&
+      state.detailEthnicityRaw === "all" &&
+      state.detailIdType === "all" &&
+      state.detailEthnicity === "all";
     }
     button.classList.toggle("is-active", active);
   });
@@ -489,6 +586,21 @@ function bindEvents() {
     render();
   });
 
+  els.detailIdTypeSelect.addEventListener("change", () => {
+    state.detailIdType = els.detailIdTypeSelect.value;
+    render();
+  });
+
+  els.detailEthnicitySelect.addEventListener("change", () => {
+    state.detailEthnicityRaw = els.detailEthnicitySelect.value;
+    render();
+  });
+
+  els.detailClassSelect.addEventListener("change", () => {
+    state.detailClass = els.detailClassSelect.value;
+    render();
+  });
+
   els.resetBtn.addEventListener("click", resetFilters);
 
   els.detailResetBtn.addEventListener("click", () => {
@@ -530,9 +642,17 @@ function bindEvents() {
   });
 
   els.changePasswordBtn.addEventListener("click", openPasswordPanel);
+  els.importRosterBtn.addEventListener("click", () => {
+    closePasswordPanel();
+    openImportPanel();
+  });
   els.closePasswordBtn.addEventListener("click", closePasswordPanel);
   els.passwordOverlay.addEventListener("click", (event) => {
     if (event.target === els.passwordOverlay) closePasswordPanel();
+  });
+  els.closeImportBtn.addEventListener("click", closeImportPanel);
+  els.importOverlay.addEventListener("click", (event) => {
+    if (event.target === els.importOverlay) closeImportPanel();
   });
 
   els.logoutBtn.addEventListener("click", () => {
@@ -540,6 +660,7 @@ function bindEvents() {
     state.data = null;
     state.detailOpen = false;
     closePasswordPanel();
+    closeImportPanel();
     setAppStatus("");
     showLogin("已退出登录");
   });
@@ -560,10 +681,51 @@ function bindEvents() {
       state.data = null;
       state.detailOpen = false;
       closePasswordPanel();
+      closeImportPanel();
       setAppStatus("");
       showLogin("密码已更新，请使用新密码重新登录。");
     } catch (error) {
       els.passwordMessage.textContent = error.message;
+    }
+  });
+
+  els.importRosterForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    els.importMessage.textContent = "";
+
+    const file = els.importFileInput.files?.[0];
+    const termInput = els.importTermInput.value.trim();
+    if (!file) {
+      els.importMessage.textContent = "请选择要导入的 Excel 文件。";
+      return;
+    }
+    if (!termInput) {
+      els.importMessage.textContent = "请填写学年度学期，例如：2025学年度第二学期。";
+      return;
+    }
+
+    const submitButton = els.importSubmitBtn;
+    const originalText = submitButton.textContent;
+    submitButton.disabled = true;
+    submitButton.textContent = "导入中...";
+    try {
+      const fileBuffer = await file.arrayBuffer();
+      const result = await api("/api/import-roster", {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: file.name,
+          fileBase64: arrayBufferToBase64(fileBuffer),
+          termInput,
+        }),
+      });
+      closeImportPanel();
+      setAppStatus(`已导入 ${result.termLabel}，共 ${formatCount(result.rowCount)} 名学生，其中外籍 ${formatCount(result.foreignCount)} 名。`);
+      await loadDataAndRender({ resetSelection: true });
+    } catch (error) {
+      els.importMessage.textContent = error.message;
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = originalText || "上传并导入";
     }
   });
 

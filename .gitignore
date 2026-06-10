@@ -1,6 +1,8 @@
 .env
 node_modules/
 outputs/
+*.xlsx
+*.xls
 dashboard-web/auth.json
 dashboard-web/data.json
 dashboard-web/*.log

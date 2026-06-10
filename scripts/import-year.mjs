@@ -192,7 +192,7 @@ async function exists(filePath) {
 async function main() {
   const { source, yearLabel: explicitYear } = parseArgs(process.argv.slice(2));
   if (!source) {
-    throw new Error("用法: node scripts/import-year.mjs <Excel路径> [--year 2026学年度]");
+    throw new Error("用法: node scripts/import-year.mjs <Excel路径> [--year 2025学年度]");
   }
 
   const sourcePath = path.isAbsolute(source) ? source : path.join(ROOT, source);
@@ -202,7 +202,7 @@ async function main() {
 
   const yearLabel = explicitYear || inferYearLabel(sourcePath);
   if (!yearLabel) {
-    throw new Error("无法从文件名识别学年度，请用 --year 2026学年度 指定。");
+    throw new Error("无法从文件名识别学年度，请用 --year 2025学年度 指定。");
   }
 
   const existing = await readSealedData().catch(() => ({ generatedAt: "", years: [] }));

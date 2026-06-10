@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>上师附小学籍信息系统</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="loginScreen" class="login-screen">
+      <section class="login-card glass">
+        <div class="logo-frame logo-frame-login">
+          <img id="loginLogo" class="brand-logo brand-logo-login" src="/assets/logo.png" alt="学校 logo" />
+        </div>
+        <p class="eyebrow">Shanghai Normal University QingPu Experimental Primary School</p>
+        <h1>上师附小学籍信息系统</h1>
+        <p class="login-copy">输入用户名和密码后查看学籍看板，支持按学年度、年级、班级筛选。</p>
+        <form id="loginForm" class="login-form">
+          <label>
+            <span>用户名</span>
+            <input id="loginUser" type="text" autocomplete="username" placeholder="admin" />
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="loginPass" type="password" autocomplete="current-password" placeholder="111111" />
+          </label>
+          <button id="loginButton" type="submit" class="login-btn">登录查看</button>
+          <p id="loginError" class="login-error" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+
+    <div id="appShell" class="page-shell" hidden>
+      <header class="hero glass">
+        <div class="brand-stack">
+          <div class="logo-frame logo-frame-hero">
+            <img id="appLogo" class="brand-logo brand-logo-hero" src="/assets/logo.png" alt="学校 logo" />
+          </div>
+          <div class="brand-copy">
+            <p class="eyebrow">Student Enrollment Dashboard</p>
+            <h1 id="appTitle">上师附小学籍信息系统</h1>
+            <p id="appSubTitle" class="hero-copy">按学年度、年级、班级直接筛选查看，汇总全校、分年级和分班级的关键学籍数据。</p>
+          </div>
+        </div>
+
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span>数据更新时间</span>
+            <strong id="generatedAt">加载中</strong>
+          </div>
+          <div class="meta-card">
+            <span>可用学年度</span>
+            <strong id="yearCount">0</strong>
+          </div>
+          <div class="meta-card user-card">
+            <span>当前用户</span>
+            <strong id="currentUser">admin</strong>
+          </div>
+          <button id="changePasswordBtn" type="button" class="meta-action">修改密码</button>
+          <button id="logoutBtn" type="button" class="meta-action ghost">退出登录</button>
+        </div>
+      </header>
+
+      <section id="appStatus" class="status-banner" hidden></section>
+
+      <section class="filters glass">
+        <div class="filter-group">
+          <label for="yearSelect">学年度</label>
+          <select id="yearSelect"></select>
+        </div>
+        <div class="filter-group">
+          <label for="gradeSelect">年级</label>
+          <select id="gradeSelect"></select>
+        </div>
+        <div class="filter-group">
+          <label for="classSelect">班级</label>
+          <select id="classSelect"></select>
+        </div>
+        <div class="filter-group">
+          <label for="searchInput">姓名搜索</label>
+          <input id="searchInput" type="search" placeholder="输入学生姓名" />
+        </div>
+        <button id="resetBtn" class="reset-btn" type="button">重置筛选</button>
+      </section>
+
+      <section class="kpis" id="kpiGrid"></section>
+
+      <section class="content-grid">
+        <article class="glass panel">
+          <div class="panel-head">
+            <h2>年级分布</h2>
+            <span id="gradeSummary">-</span>
+          </div>
+          <div id="gradeChart" class="chart"></div>
+        </article>
+        <article class="glass panel">
+          <div class="panel-head">
+            <h2>班级分布</h2>
+            <span id="classSummary">-</span>
+          </div>
+          <div id="classChart" class="chart"></div>
+        </article>
+      </section>
+
+      <section class="glass panel">
+        <div class="panel-head">
+          <div class="detail-head">
+            <h2>学生详细信息</h2>
+            <button id="detailToggleBtn" class="ghost-btn" type="button">展开查看</button>
+          </div>
+          <span id="detailSummary">-</span>
+        </div>
+        <div id="detailFilters" class="detail-filters" hidden>
+          <div class="filter-group">
+            <label for="detailSearchInput">姓名筛选</label>
+            <input id="detailSearchInput" type="search" placeholder="输入学生姓名" />
+          </div>
+          <div class="filter-group">
+            <label for="detailGenderSelect">性别</label>
+            <select id="detailGenderSelect">
+              <option value="all">全部性别</option>
+              <option value="男性">男性</option>
+              <option value="女性">女性</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="detailStatusSelect">状态</label>
+            <select id="detailStatusSelect">
+              <option value="all">全部状态</option>
+              <option value="在读">在读</option>
+              <option value="休学">休学</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="detailCitySelect">户籍</label>
+            <select id="detailCitySelect">
+              <option value="all">全部户籍</option>
+              <option value="本市户籍">本市户籍</option>
+              <option value="非本市户籍">非本市户籍</option>
+            </select>
+          </div>
+          <button id="detailResetBtn" class="reset-btn" type="button">重置明细筛选</button>
+        </div>
+        <div id="detailQuickBar" class="detail-quick" hidden>
+          <span class="detail-quick-label">快捷开关</span>
+          <div class="detail-quick-group">
+            <button type="button" class="detail-chip" data-detail-filter="status" data-detail-value="在读">在读</button>
+            <button type="button" class="detail-chip" data-detail-filter="status" data-detail-value="休学">休学</button>
+            <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="男性">男性</button>
+            <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="女性">女性</button>
+            <button type="button" class="detail-chip" data-detail-filter="city" data-detail-value="本市户籍">本市户籍</button>
+            <button type="button" class="detail-chip" data-detail-filter="city" data-detail-value="非本市户籍">非本市户籍</button>
+            <button type="button" class="detail-chip" data-detail-filter="ethnicity" data-detail-value="外籍">外籍</button>
+            <button type="button" class="detail-chip detail-chip-ghost" data-detail-filter="reset" data-detail-value="all">全部</button>
+          </div>
+        </div>
+        <div id="detailPanel" class="table-wrap" hidden>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>姓名</th>
+                <th>学年度</th>
+                <th>年级</th>
+                <th>班级</th>
+                <th>性别</th>
+                <th>状态</th>
+                <th>户籍</th>
+                <th>民族</th>
+                <th>民族分类</th>
+              </tr>
+            </thead>
+            <tbody id="studentTbody"></tbody>
+          </table>
+        </div>
+        <div id="detailHint" class="detail-hint">当前默认不展示，点击“展开查看”即可查看完整学生列表。</div>
+      </section>
+
+      <div id="passwordOverlay" class="modal-overlay" hidden>
+        <section id="passwordPanel" class="glass panel modal-panel modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordTitle">
+          <div class="panel-head">
+            <h2 id="passwordTitle">修改密码</h2>
+            <button id="closePasswordBtn" class="ghost-btn" type="button">关闭</button>
+          </div>
+          <form id="changePasswordForm" class="password-form">
+            <label>
+              <span>当前密码</span>
+              <input id="currentPassword" type="password" autocomplete="current-password" />
+            </label>
+            <label>
+              <span>新密码</span>
+              <input id="newPassword" type="password" autocomplete="new-password" />
+            </label>
+            <label>
+              <span>确认新密码</span>
+              <input id="confirmPassword" type="password" autocomplete="new-password" />
+            </label>
+            <button id="savePasswordBtn" class="login-btn" type="submit">保存新密码</button>
+            <p id="passwordMessage" class="login-error" aria-live="polite"></p>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

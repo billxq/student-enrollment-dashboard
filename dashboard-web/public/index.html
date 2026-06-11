@@ -33,34 +33,27 @@
 
     <div id="appShell" class="app-shell" hidden>
       <header class="topbar glass">
-        <div class="topbar-brand">
+        <div class="topbar-logo">
           <div class="logo-frame logo-frame-hero">
             <img id="appLogo" class="brand-logo brand-logo-hero" src="/assets/logo.png" alt="学校 logo" />
           </div>
-          <div class="topbar-copy">
-            <p class="eyebrow">Student Enrollment Dashboard</p>
-            <h1 id="appTitle">上师附小学籍信息系统</h1>
-            <p id="appSubTitle" class="hero-copy">按学年度、年级、班级直接筛选查看，汇总全校、分年级和分班级的关键学籍数据。</p>
-          </div>
+        </div>
+        <div class="topbar-copy">
+          <p class="eyebrow">Student Enrollment Dashboard</p>
+          <h1 id="appTitle">上师附小学籍信息系统</h1>
+          <p id="appSubTitle" class="hero-copy">按学年度、年级、班级直接筛选查看，汇总全校、分年级和分班级的关键学籍数据。</p>
         </div>
 
         <div class="topbar-actions">
-          <div class="meta-card meta-card-inline">
-            <span>数据更新时间</span>
-            <strong id="generatedAt">加载中</strong>
-          </div>
-          <div class="meta-card meta-card-inline">
-            <span>可用学年度</span>
-            <strong id="yearCount">0</strong>
-          </div>
-          <div class="meta-card meta-card-inline">
-            <span>当前用户</span>
-            <strong id="currentUser">admin</strong>
+          <div class="topbar-userline">
+            <span class="topbar-user-label">当前用户</span>
+            <strong id="currentUser" class="topbar-user-value">admin</strong>
           </div>
           <div class="topbar-buttons">
-            <button id="changePasswordBtn" type="button" class="meta-action">修改密码</button>
-            <button id="logoutBtn" type="button" class="meta-action ghost">退出登录</button>
-          </div>
+            <button id="changePasswordBtn" type="button" class="meta-action meta-action-small">修改密码</button>
+            <button id="importRosterBtn" type="button" class="meta-action meta-action-small">导入名单</button>
+            <button id="logoutBtn" type="button" class="meta-action ghost meta-action-small">退出登录</button>
+          </div></div>
         </div>
       </header>
 
@@ -69,10 +62,37 @@
       <section class="section-block">
         <div class="section-head">
           <div>
-            <p class="section-kicker">交人数</p>
+            <p class="section-kicker">统计概览</p>
             <h2>全校概览</h2>
           </div>
           <span id="gradeSummary">-</span>
+        </div>
+        <div class="overview-toolbar">
+          <div class="section-head section-head-tight overview-toolbar-head">
+            <div>
+              <p class="section-kicker">快速定位</p>
+              <h2>快速定位数据</h2>
+            </div>
+            <button id="resetBtn" class="reset-btn reset-btn-small" type="button">重置筛选</button>
+          </div>
+          <div class="filters filters-compact">
+            <div class="filter-group">
+              <label for="yearSelect">学年度</label>
+              <select id="yearSelect"></select>
+            </div>
+            <div class="filter-group">
+              <label for="gradeSelect">年级</label>
+              <select id="gradeSelect"></select>
+            </div>
+            <div class="filter-group">
+              <label for="classSelect">班级</label>
+              <select id="classSelect"></select>
+            </div>
+            <div class="filter-group">
+              <label for="searchInput">姓名搜索</label>
+              <input id="searchInput" type="search" placeholder="输入学生姓名" />
+            </div>
+          </div>
         </div>
         <section class="kpis" id="kpiGrid"></section>
       </section>
@@ -104,34 +124,6 @@
       </section>
 
       <section class="section-block glass panel">
-        <div class="section-head section-head-tight">
-          <div>
-            <p class="section-kicker">筛选</p>
-            <h2>快速定位数据</h2>
-          </div>
-          <button id="resetBtn" class="reset-btn" type="button">重置筛选</button>
-        </div>
-        <div class="filters">
-          <div class="filter-group">
-            <label for="yearSelect">学年度</label>
-            <select id="yearSelect"></select>
-          </div>
-          <div class="filter-group">
-            <label for="gradeSelect">年级</label>
-            <select id="gradeSelect"></select>
-          </div>
-          <div class="filter-group">
-            <label for="classSelect">班级</label>
-            <select id="classSelect"></select>
-          </div>
-          <div class="filter-group">
-            <label for="searchInput">姓名搜索</label>
-            <input id="searchInput" type="search" placeholder="输入学生姓名" />
-          </div>
-        </div>
-      </section>
-
-      <section class="section-block glass panel">
         <div class="panel-head">
           <div class="detail-head">
             <div>
@@ -153,8 +145,8 @@
             <label for="detailGenderSelect">性别</label>
             <select id="detailGenderSelect">
               <option value="all">全部性别</option>
-              <option value="男">男</option>
-              <option value="女">女</option>
+              <option value="男">男生</option>
+              <option value="女">女生</option>
             </select>
           </div>
           <div class="filter-group">
@@ -173,11 +165,23 @@
               <option value="非本市户籍">非本市户籍</option>
             </select>
           </div>
+          <div class="filter-group">
+            <label for="detailIdTypeSelect">证件类型</label>
+            <select id="detailIdTypeSelect"></select>
+          </div>
+          <div class="filter-group">
+            <label for="detailEthnicitySelect">民族</label>
+            <select id="detailEthnicitySelect"></select>
+          </div>
+          <div class="filter-group">
+            <label for="detailClassSelect">班级</label>
+            <select id="detailClassSelect"></select>
+          </div>
           <button id="detailResetBtn" class="reset-btn" type="button">重置明细筛选</button>
         </div>
 
         <div id="detailQuickBar" class="detail-quick" hidden>
-          <span class="detail-quick-label">快捷开关</span>
+          <span class="detail-quick-label">快速定位</span>
           <div class="detail-quick-group">
             <button type="button" class="detail-chip" data-detail-filter="status" data-detail-value="在读">在读</button>
             <button type="button" class="detail-chip" data-detail-filter="status" data-detail-value="休学">休学</button>
@@ -185,12 +189,13 @@
             <button type="button" class="detail-chip" data-detail-filter="gender" data-detail-value="女">女生</button>
             <button type="button" class="detail-chip" data-detail-filter="city" data-detail-value="本市户籍">本市户籍</button>
             <button type="button" class="detail-chip" data-detail-filter="city" data-detail-value="非本市户籍">非本市户籍</button>
+            <button type="button" class="detail-chip" data-detail-filter="ethnicity" data-detail-value="少数民族">少数民族</button>
             <button type="button" class="detail-chip" data-detail-filter="ethnicity" data-detail-value="外籍">外籍</button>
             <button type="button" class="detail-chip detail-chip-ghost" data-detail-filter="reset" data-detail-value="all">全部</button>
           </div>
         </div>
 
-        <div id="detailPanel" class="table-wrap" hidden>
+<div id="detailPanel" class="table-wrap" hidden>
           <table class="data-table">
             <thead>
               <tr>
@@ -202,6 +207,7 @@
                 <th>性别</th>
                 <th>状态</th>
                 <th>户籍</th>
+                <th>证件类型</th>
                 <th>民族</th>
                 <th>民族分类</th>
               </tr>
@@ -235,6 +241,34 @@
           </form>
         </section>
       </div>
+      <div id="importOverlay" class="modal-overlay" hidden>
+        <section id="importPanel" class="glass panel modal-panel modal-card" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+          <div class="panel-head">
+            <h2 id="importTitle">导入名单</h2>
+            <button id="closeImportBtn" class="ghost-btn" type="button">关闭</button>
+          </div>
+          <div class="detail-hint import-hint">
+            下载模板后按要求填写 Excel，再选择学年度学期上传。学年度以你填写的“XX学年度XX学期”为准。
+          </div>
+          <form id="importRosterForm" class="password-form import-form">
+            <label>
+              <span>导入模板</span>
+              <a id="importTemplateLink" class="template-link" href="/assets/import-template.xlsx" download>下载 Excel 模板</a>
+            </label>
+            <label>
+              <span>选择 Excel 文件</span>
+              <input id="importFileInput" type="file" accept=".xlsx" />
+            </label>
+            <label>
+              <span>学年度学期</span>
+              <input id="importTermInput" type="text" placeholder="例如：2025学年度第二学期" />
+            </label>
+            <button id="importSubmitBtn" class="login-btn" type="submit">上传并导入</button>
+            <p id="importMessage" class="login-error" aria-live="polite"></p>
+          </form>
+        </section>
+      </div>
+
     </div>
 
     <script src="/app.js"></script>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import sqlite3
 import shutil
 import sys
 from copy import deepcopy
@@ -16,6 +17,7 @@ from openpyxl import load_workbook
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_FILE = ROOT / "dashboard-web" / "data.sealed.json"
+SQLITE_FILE = ROOT / "dashboard-web" / "data.sqlite"
 ARCHIVE_DIR = ROOT / "archive"
 ENV_FILE = ROOT / ".env"
 
@@ -37,7 +39,7 @@ def read_passphrase() -> str:
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
       if line.startswith("DATA_PASSPHRASE="):
         return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise RuntimeError("missing DATA_PASSPHRASE")
+    return ""
 
 
 def decrypt_existing(passphrase: str) -> dict:
@@ -65,6 +67,195 @@ def seal_data(passphrase: str, value: dict) -> dict:
         "tag": base64.b64encode(ciphertext_with_tag[-16:]).decode("ascii"),
         "ciphertext": base64.b64encode(ciphertext_with_tag[:-16]).decode("ascii"),
     }
+
+
+def year_number(year_label: str) -> int:
+    import re
+
+    match = re.search(r"(\d{4})", year_label or "")
+    return int(match.group(1)) if match else 0
+
+
+def ensure_sqlite_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS academic_years (
+            yearLabel TEXT PRIMARY KEY,
+            termLabel TEXT NOT NULL,
+            sourceFile TEXT NOT NULL,
+            sourceName TEXT NOT NULL,
+            mtimeMs INTEGER NOT NULL,
+            yearNumber INTEGER NOT NULL,
+            importedAt TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            yearLabel TEXT NOT NULL REFERENCES academic_years(yearLabel) ON DELETE CASCADE,
+            rowIndex INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            className TEXT NOT NULL,
+            gender TEXT NOT NULL,
+            status TEXT NOT NULL,
+            province TEXT NOT NULL,
+            ethnicity TEXT NOT NULL,
+            idType TEXT NOT NULL,
+            studentCategory TEXT NOT NULL,
+            cityStatus TEXT NOT NULL,
+            ethnicityGroup TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_students_year ON students(yearLabel);
+        CREATE INDEX IF NOT EXISTS idx_students_year_sort ON students(yearLabel, rowIndex);
+        CREATE INDEX IF NOT EXISTS idx_students_year_grade_class_name ON students(yearLabel, grade, className, name);
+        """
+    )
+
+
+def read_sqlite_data() -> dict | None:
+    if not SQLITE_FILE.exists():
+        return None
+
+    conn = sqlite3.connect(SQLITE_FILE)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        ensure_sqlite_schema(conn)
+        year_count = conn.execute("SELECT COUNT(*) AS count FROM academic_years").fetchone()["count"]
+        if not year_count:
+            return None
+
+        generated = conn.execute("SELECT value FROM meta WHERE key = ?", ("generatedAt",)).fetchone()
+        year_rows = conn.execute(
+            """
+            SELECT yearLabel, termLabel, sourceFile, sourceName, mtimeMs, importedAt
+            FROM academic_years
+            ORDER BY yearNumber DESC, importedAt DESC, yearLabel DESC
+            """
+        ).fetchall()
+        years = []
+        for year in year_rows:
+            rows = conn.execute(
+                """
+                SELECT
+                    name, grade, className, gender, status, province, ethnicity,
+                    idType, studentCategory, cityStatus, ethnicityGroup
+                FROM students
+                WHERE yearLabel = ?
+                ORDER BY rowIndex ASC, id ASC
+                """,
+                (year["yearLabel"],),
+            ).fetchall()
+            years.append(
+                {
+                    "yearLabel": year["yearLabel"],
+                    "termLabel": year["termLabel"],
+                    "sourceFile": year["sourceFile"],
+                    "sourceName": year["sourceName"],
+                    "mtimeMs": int(year["mtimeMs"] or 0),
+                    "importedAt": year["importedAt"],
+                    "rows": [dict(row) for row in rows],
+                }
+            )
+
+        return {
+            "generatedAt": generated["value"] if generated else "",
+            "years": years,
+        }
+    finally:
+        conn.close()
+
+
+def write_sqlite_data(value: dict) -> None:
+    SQLITE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(SQLITE_FILE)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        ensure_sqlite_schema(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM students")
+        conn.execute("DELETE FROM academic_years")
+        conn.execute("DELETE FROM meta")
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+            ("generatedAt", str(value.get("generatedAt", ""))),
+        )
+
+        insert_year = (
+            "INSERT OR REPLACE INTO academic_years "
+            "(yearLabel, termLabel, sourceFile, sourceName, mtimeMs, yearNumber, importedAt) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        insert_student = (
+            "INSERT INTO students "
+            "(yearLabel, rowIndex, name, grade, className, gender, status, province, ethnicity, "
+            "idType, studentCategory, cityStatus, ethnicityGroup) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+
+        for year in value.get("years", []):
+            year_label = str(year.get("yearLabel", "")).strip()
+            if not year_label:
+                continue
+            term_label = str(year.get("termLabel", year_label)).strip() or year_label
+            conn.execute(
+                insert_year,
+                (
+                    year_label,
+                    term_label,
+                    str(year.get("sourceFile", "")).strip(),
+                    str(year.get("sourceName", "")).strip(),
+                    int(year.get("mtimeMs", 0) or 0),
+                    year_number(year_label),
+                    str(value.get("generatedAt", "")),
+                ),
+            )
+            for index, row in enumerate(year.get("rows", [])):
+                conn.execute(
+                    insert_student,
+                    (
+                        year_label,
+                        index,
+                        str(row.get("name", "")).strip(),
+                        str(row.get("grade", "")).strip(),
+                        str(row.get("className", "")).strip(),
+                        str(row.get("gender", "")).strip(),
+                        str(row.get("status", "")).strip(),
+                        str(row.get("province", "")).strip(),
+                        str(row.get("ethnicity", "")).strip(),
+                        str(row.get("idType", "")).strip(),
+                        str(row.get("studentCategory", "")).strip(),
+                        str(row.get("cityStatus", "")).strip(),
+                        str(row.get("ethnicityGroup", "")).strip(),
+                    ),
+                )
+
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def read_existing_data(passphrase: str) -> dict:
+    sqlite_data = read_sqlite_data()
+    if sqlite_data is not None:
+        return sqlite_data
+
+    if DATA_FILE.exists():
+        if not passphrase:
+            raise RuntimeError("missing DATA_PASSPHRASE")
+        return decrypt_existing(passphrase)
+
+    return {"generatedAt": "", "years": []}
 
 
 def parse_term_label(term_label: str) -> tuple[str, str]:
@@ -179,7 +370,7 @@ def main() -> None:
     term_label = sys.argv[3]
     passphrase = read_passphrase()
 
-    existing = decrypt_existing(passphrase)
+    existing = read_existing_data(passphrase)
     rows = parse_workbook(source)
     archived_path = copy_to_archive(source, year_label, term_label)
 
@@ -196,14 +387,14 @@ def main() -> None:
     )
     next_years.sort(key=lambda item: int("".join(ch for ch in item.get("yearLabel", "") if ch.isdigit())[:4] or "0"), reverse=True)
 
-    sealed = seal_data(
-        passphrase,
-        {
-            "generatedAt": datetime.now(timezone.utc).isoformat(),
-            "years": next_years,
-        },
-    )
-    DATA_FILE.write_text(json.dumps(sealed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = {
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "years": next_years,
+    }
+    write_sqlite_data(payload)
+    if passphrase:
+        sealed = seal_data(passphrase, payload)
+        DATA_FILE.write_text(json.dumps(sealed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     foreign_count = sum(1 for row in rows if row["ethnicityGroup"] == "外籍")
     result = {

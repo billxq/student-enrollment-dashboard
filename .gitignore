@@ -6,5 +6,8 @@ outputs/
 archive/**/*.xlsx
 dashboard-web/auth.json
 dashboard-web/data.json
+dashboard-web/data.sqlite
+dashboard-web/data.sqlite-wal
+dashboard-web/data.sqlite-shm
 dashboard-web/*.log
 *.log

@@ -7,6 +7,7 @@ import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { loadDashboardData } from "./sqlite-store.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SERVER_DIR, "..");
@@ -202,21 +203,9 @@ async function loadData() {
 
   dataCache.promise = (async () => {
     if (dataCache.value) return dataCache.value;
-
-    try {
-      const raw = await fs.readFile(DATA_SEALED_FILE, "utf8");
-      const value = decodeSealedData(raw);
-      dataCache.value = value;
-      return value;
-    } catch (error) {
-      if (await fileExists(DATA_PLAINTEXT_FILE)) {
-        const raw = await fs.readFile(DATA_PLAINTEXT_FILE, "utf8");
-        const value = JSON.parse(raw.replace(/^\uFEFF/, ""));
-        dataCache.value = value;
-        return value;
-      }
-      throw normalizeDataLoadError(error);
-    }
+    const value = await loadDashboardData({ passphrase: DATA_PASSPHRASE });
+    dataCache.value = value;
+    return value;
   })().finally(() => {
     dataCache.promise = null;
   });

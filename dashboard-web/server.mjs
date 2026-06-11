@@ -187,6 +187,16 @@ function decodeSealedData(raw) {
   return JSON.parse(plaintext);
 }
 
+function normalizeDataLoadError(error) {
+  const message = String(error?.message || error || "");
+  if (/unsupported state or unable to authenticate data/i.test(message) || /auth tag/i.test(message)) {
+    return new Error(
+      "学籍数据解密失败：请确认 VPS 上的 DATA_PASSPHRASE 与本地加密时完全一致，并在修改后重启服务；如果你刚换了密钥，需要先用正确密钥重新导入生成 data.sealed.json。",
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 async function loadData() {
   if (dataCache.promise) return dataCache.promise;
 
@@ -205,7 +215,7 @@ async function loadData() {
         dataCache.value = value;
         return value;
       }
-      throw error;
+      throw normalizeDataLoadError(error);
     }
   })().finally(() => {
     dataCache.promise = null;
